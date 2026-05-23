@@ -26,21 +26,6 @@ def _load_asset(filename):
 _hat_img     = _load_asset("cappello.png")
 _glasses_img = _load_asset("occhiali.png")
 
-# ─── New_Face: caricata dalla root del progetto ────────────────────────────────
-_NEW_FACE_PATH = os.path.join(os.path.dirname(__file__), "New_Face.jpg")
-
-def _load_new_face():
-    """
-    Carica New_Face.jpg dalla cartella del progetto.
-    Ritorna l'immagine BGR oppure None se il file non esiste.
-    """
-    if os.path.exists(_NEW_FACE_PATH):
-        img = cv2.imread(_NEW_FACE_PATH)
-        if img is not None:
-            return img
-    return None
-
-
 
 # ─── Rettangolo verde sui visi ────────────────────────────────────────────────
 
@@ -238,59 +223,175 @@ def apply_ghost_effect(frame, alpha=0.5):
 
 
 
-# ─── Face Swap con New_Face.jpg ───────────────────────────────────────────────
+
+# ─── Audio (pygame per mp3 in loop) ──────────────────────────────────────────
+
+_audio_initialized = False
+_SOUND_PATH = os.path.join(ASSETS_DIR, "sound.mp3")
+
+def _init_audio():
+    """Inizializza pygame mixer per la riproduzione audio. Chiamata lazy al primo uso."""
+    global _audio_initialized
+    if _audio_initialized:
+        return True
+    try:
+        import pygame
+        pygame.mixer.init()
+        _audio_initialized = True
+        return True
+    except Exception as e:
+        print(f"[AUDIO] pygame non disponibile: {e}  →  installa con: pip install pygame")
+        return False
+
+def start_face_swap_sound():
+    """Avvia sound.mp3 in loop continuo. Non fa nulla se il file non esiste."""
+    if not _init_audio():
+        return
+    if not os.path.exists(_SOUND_PATH):
+        print(f"[AUDIO] File non trovato: {_SOUND_PATH}")
+        return
+    try:
+        import pygame
+        pygame.mixer.music.load(_SOUND_PATH)
+        pygame.mixer.music.play(loops=-1)   # -1 = loop infinito
+    except Exception as e:
+        print(f"[AUDIO] Errore avvio: {e}")
+
+def stop_face_swap_sound():
+    """Ferma la riproduzione audio."""
+    if not _audio_initialized:
+        return
+    try:
+        import pygame
+        pygame.mixer.music.stop()
+    except Exception:
+        pass
+
+
+# ─── Face Swap "ADESSO PARLO IO" ─────────────────────────────────────────────
+
+# Cache dell'immagine: caricata una volta sola
+_new_face_cache = None
+_new_face_loaded = False
+
+def _get_new_face():
+    """
+    Carica New_Face.jpg da assets/ con cache.
+    Ritorna l'immagine BGR oppure None se non trovata.
+    """
+    global _new_face_cache, _new_face_loaded
+    if _new_face_loaded:
+        return _new_face_cache
+    path = os.path.join(ASSETS_DIR, "New_Face.jpg")
+    if os.path.exists(path):
+        _new_face_cache = cv2.imread(path)
+    _new_face_loaded = True
+    return _new_face_cache
+
+# Posizione dell'ultimo viso rilevato: usata per mantenere la faccia
+# anche nei frame in cui il detector fallisce (face detection instabile)
+_last_faces = []
+_face_miss_counter = 0
+_FACE_MISS_TOLERANCE = 8   # frame consecutivi senza viso prima di resettare
+
 
 def apply_face_swap(frame, faces):
     """
-    Sostituisce ogni viso rilevato con New_Face.jpg.
-    La nuova faccia viene scalata esattamente sul rettangolo del viso,
-    poi blended con una maschera ellittica sfumata per bordi naturali.
-    Se New_Face.jpg non esiste, ritorna il frame invariato con un avviso.
+    Effetto "ADESSO PARLO IO":
+      1. Converte l'intero frame in bianco e nero
+      2. Sovrappone New_Face.jpg sul viso rilevato con maschera ellittica morbida
+      3. Scrive "ADESSO PARLO IO" in grande in basso al centro
+    Usa l'ultima posizione nota del viso per stabilizzare la detection
+    nei frame in cui la Haar cascade fallisce temporaneamente.
     """
-    new_face_img = _load_new_face()
+    global _last_faces, _face_miss_counter
 
-    result = frame.copy()
+    new_face_img = _get_new_face()
 
+    # ── 1. Tutto in bianco e nero ─────────────────────────────────────────────
+    gray   = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    result = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+    # ── Stabilizzazione face detection ───────────────────────────────────────
+    if len(faces) > 0:
+        _last_faces       = list(faces)
+        _face_miss_counter = 0
+    else:
+        _face_miss_counter += 1
+        if _face_miss_counter > _FACE_MISS_TOLERANCE:
+            _last_faces = []   # viso perso davvero
+
+    faces_to_use = _last_faces
+
+    # ── 2. Overlay New_Face ───────────────────────────────────────────────────
     if new_face_img is None:
-        # Avvisa l'utente direttamente sul frame
-        msg = "New_Face.jpg non trovata nella cartella del progetto"
-        cv2.putText(result, msg, (10, result.shape[0] // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
-        return result
+        # Avviso direttamente sul frame se manca il file
+        cv2.putText(result, "New_Face.jpg non trovata in assets/",
+                    (10, result.shape[0] // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+    else:
+        for (x, y, w, h) in faces_to_use:
+            fh, fw = result.shape[:2]
 
-    if len(faces) == 0:
-        return result
+            # Allarga leggermente il ROI per coprire bene il viso
+            pad_x = int(w * 0.12)
+            pad_y = int(h * 0.15)
+            x1 = max(0, x - pad_x)
+            y1 = max(0, y - pad_y)
+            x2 = min(fw, x + w + pad_x)
+            y2 = min(fh, y + h + pad_y)
+            rw, rh = x2 - x1, y2 - y1
+            if rw <= 0 or rh <= 0:
+                continue
 
-    for (x, y, w, h) in faces:
-        # Ritaglio sicuro entro i bordi del frame
-        fh, fw = result.shape[:2]
-        x1 = max(0, x)
-        y1 = max(0, y)
-        x2 = min(fw, x + w)
-        y2 = min(fh, y + h)
-        rw, rh = x2 - x1, y2 - y1
-        if rw <= 0 or rh <= 0:
-            continue
+            # Scala la nuova faccia sul ROI
+            nf = cv2.resize(new_face_img, (rw, rh), interpolation=cv2.INTER_AREA)
 
-        # Scala New_Face sulla dimensione esatta del viso rilevato
-        new_face_resized = cv2.resize(new_face_img, (rw, rh), interpolation=cv2.INTER_AREA)
+            # Maschera ellittica con bordi morbidi
+            mask = np.zeros((rh, rw), dtype=np.uint8)
+            cx, cy = rw // 2, rh // 2
+            cv2.ellipse(mask, (cx, cy),
+                        (int(cx * 0.88), int(cy * 0.92)),
+                        0, 0, 360, 255, -1)
+            mask = cv2.GaussianBlur(mask, (25, 25), 0)
+            m = (mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
 
-        # Maschera ellittica sfumata: bordi morbidi per un look naturale
-        mask = np.zeros((rh, rw), dtype=np.uint8)
-        cx, cy = rw // 2, rh // 2
-        cv2.ellipse(mask, (cx, cy), (int(cx * 0.92), int(cy * 0.95)),
-                    0, 0, 360, 255, -1)
-        mask = cv2.GaussianBlur(mask, (21, 21), 0)
-        mask_f = mask.astype(np.float32) / 255.0
+            roi     = result[y1:y2, x1:x2].astype(np.float32)
+            blended = nf.astype(np.float32) * m + roi * (1.0 - m)
+            result[y1:y2, x1:x2] = np.clip(blended, 0, 255).astype(np.uint8)
 
-        # Compositing sul ROI del frame
-        roi     = result[y1:y2, x1:x2].astype(np.float32)
-        new_f   = new_face_resized.astype(np.float32)
-        m       = mask_f[:, :, np.newaxis]
-        blended = new_f * m + roi * (1.0 - m)
-        result[y1:y2, x1:x2] = np.clip(blended, 0, 255).astype(np.uint8)
+    # ── 3. Scritta "ADESSO PARLO IO" ─────────────────────────────────────────
+    h, w = result.shape[:2]
+    testo     = "ADESSO PARLO IO"
+    font      = cv2.FONT_HERSHEY_DUPLEX
+    scale     = _fit_text_scale(testo, font, w - 40, 3)
+    thickness = 4
+
+    (tw, th), baseline = cv2.getTextSize(testo, font, scale, thickness)
+    tx = (w - tw) // 2
+    ty = h - 28
+
+    # Ombra nera spessa per leggibilità totale
+    cv2.putText(result, testo, (tx + 3, ty + 3), font, scale,
+                (0, 0, 0), thickness + 4, cv2.LINE_AA)
+    # Testo bianco brillante
+    cv2.putText(result, testo, (tx, ty), font, scale,
+                (255, 255, 255), thickness, cv2.LINE_AA)
 
     return result
+
+
+def _fit_text_scale(text, font, max_width, thickness):
+    """
+    Calcola il font_scale massimo affinché il testo entri in max_width pixel.
+    """
+    scale = 0.5
+    while scale < 6.0:
+        (tw, _), _ = cv2.getTextSize(text, font, scale + 0.1, thickness)
+        if tw > max_width:
+            break
+        scale += 0.1
+    return round(scale, 1)
 
 
 # ─── Screenshot ───────────────────────────────────────────────────────────────

@@ -80,10 +80,19 @@ def draw_hud(frame, info: dict):
     if info.get('blur_bg'):   stati.append("BLUR-BG")
     if info.get('face_rect'): stati.append("FACE-BOX")
     if info.get('face_swap'): stati.append("FACE-SWAP")
+    if info.get('hat'):       stati.append("HAT")
+    if info.get('glasses'):   stati.append("GLASSES")
+    if info.get('motion'):    stati.append("MOTION")
+    if info.get('ghost'):     stati.append("GHOST")
     if stati:
-        _draw_text_with_shadow(result,
-            " | ".join(stati),
-            (16, 108), font_scale=0.42, color=COLOR_BLUE)
+        # Se troppi stati, li spezza su due righe
+        riga1 = " | ".join(stati[:4])
+        riga2 = " | ".join(stati[4:])
+        _draw_text_with_shadow(result, riga1,
+            (16, 108), font_scale=0.38, color=COLOR_BLUE)
+        if riga2:
+            _draw_text_with_shadow(result, riga2,
+                (16, 124), font_scale=0.38, color=COLOR_BLUE)
 
     # Indicatore REC (angolo in alto a destra)
     if info.get('recording'):
@@ -91,6 +100,53 @@ def draw_hud(frame, info: dict):
         cv2.circle(result, (rec_x, 24), 8, COLOR_RED, -1)
         _draw_text_with_shadow(result, "REC", (rec_x + 14, 30),
                                font_scale=0.55, color=COLOR_RED)
+
+    return result
+
+
+def draw_filter_bar(frame, filter_list, active_name):
+    """
+    Barra filtri in basso al frame: mostra tutti i filtri disponibili,
+    evidenziando quello attivo con sfondo colorato.
+
+    filter_list: lista di tuple (nome, funzione) - come FILTER_MAP.values()
+    active_name: nome del filtro correntemente attivo
+    """
+    result  = frame.copy()
+    h, w    = result.shape[:2]
+
+    bar_h   = 32
+    bar_y   = h - bar_h
+
+    # Sfondo barra semitrasparente
+    overlay = result.copy()
+    cv2.rectangle(overlay, (0, bar_y), (w, h), (20, 20, 20), -1)
+    result = cv2.addWeighted(result, 0.45, overlay, 0.55, 0)
+
+    # Calcola larghezza di ogni slot
+    n       = len(filter_list)
+    slot_w  = w // n if n > 0 else w
+
+    for i, (name, _) in enumerate(filter_list):
+        x1 = i * slot_w
+        x2 = x1 + slot_w - 2
+        is_active = (name == active_name)
+
+        # Sfondo slot attivo
+        if is_active:
+            cv2.rectangle(result, (x1, bar_y + 1), (x2, h - 1), (50, 180, 80), -1)
+
+        # Numero tasto (1-indexed)
+        label = f"{i+1}:{name}"
+        # Tronca se troppo lungo
+        if len(label) > 10:
+            label = label[:9] + "."
+
+        text_color = COLOR_BLACK if is_active else COLOR_WHITE
+        scale = 0.38
+        tx = x1 + 4
+        ty = bar_y + 21
+        cv2.putText(result, label, (tx, ty), FONT, scale, text_color, 1, cv2.LINE_AA)
 
     return result
 
@@ -139,6 +195,12 @@ def draw_command_panel(frame, active_effects: dict):
             ("[F]", "Box viso",       "face_rect"),
             ("[B]", "Blur sfondo",    "blur_bg"),
             ("[N]", "Face swap",      "face_swap"),
+            ("[H]", "Cappello",       "hat"),
+            ("[G]", "Occhiali",       "glasses"),
+        ]),
+        ("── EFFETTI SPECIALI ──", None, [
+            ("[O]", "Movimento",      "motion"),
+            ("[T]", "Ghost/scia",     "ghost"),
         ]),
         ("── CONTROLLI ──", None, [
             ("[M]", "Mirror",         "mirror"),

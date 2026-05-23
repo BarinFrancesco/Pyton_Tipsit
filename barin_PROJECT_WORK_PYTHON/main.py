@@ -27,14 +27,18 @@ FILTER_MAP = {
 }
 
 # ─── Stato applicazione ────────────────────────────────────────────────────────
-current_filter_name = "Originale"
-current_filter_fn   = filters.apply_original
-face_rect_active    = False   # Tasto F: rettangoli verdi sui visi
-blur_bg_active      = False   # Tasto B: blur sfondo (richiede face detection)
-face_swap_active    = False   # Tasto N: sostituisce il viso con New_Face.jpg
-mirror_active       = False   # Tasto M: flip specchio
-recording           = False   # Tasto R: registrazione video
-video_writer        = None
+current_filter_name  = "Originale"
+current_filter_fn    = filters.apply_original
+face_rect_active     = False   # Tasto F: rettangoli verdi sui visi
+blur_bg_active       = False   # Tasto B: blur sfondo
+face_swap_active     = False   # Tasto N: sostituisce il viso con New_Face.jpg
+hat_active           = False   # Tasto H: cappello sopra la testa
+glasses_active       = False   # Tasto G: occhiali sul viso
+motion_active        = False   # Tasto O: rilevamento movimento
+ghost_active         = False   # Tasto T: effetto scia/fantasma
+mirror_active        = False   # Tasto M: flip specchio
+recording            = False   # Tasto R: registrazione video
+video_writer         = None
 
 # Variabili per calcolo FPS
 fps         = 0.0
@@ -42,6 +46,7 @@ frame_count = 0
 fps_timer   = time.time()
 
 # Haar cascade per face detection
+# scaleFactor più basso e minNeighbors ridotto = più sensibile ma qualche falso positivo in meno
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
@@ -58,6 +63,7 @@ def init_video_writer(frame):
 def main():
     global current_filter_name, current_filter_fn
     global face_rect_active, blur_bg_active, face_swap_active
+    global hat_active, glasses_active, motion_active, ghost_active
     global mirror_active
     global recording, video_writer
     global fps, frame_count, fps_timer
@@ -90,8 +96,14 @@ def main():
 
         # ── Face detection (usata da più effetti) ────────────────────────────
         gray_for_det = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces        = face_cascade.detectMultiScale(
-            gray_for_det, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+        # equalizeHist migliora la detection in condizioni di luce non ideale
+        gray_for_det = cv2.equalizeHist(gray_for_det)
+        faces = face_cascade.detectMultiScale(
+            gray_for_det,
+            scaleFactor=1.05,    # step più piccolo = più robusto ma leggermente più lento
+            minNeighbors=4,      # ridotto da 5: meno falsi negativi
+            minSize=(50, 50),    # ridotto da 60: rileva visi anche più lontani
+            flags=cv2.CASCADE_SCALE_IMAGE
         )
 
         # ── Blur sfondo ──────────────────────────────────────────────────────
@@ -101,6 +113,22 @@ def main():
         # ── Face swap (New_Face.jpg) ──────────────────────────────────────────
         if face_swap_active:
             frame = effects.apply_face_swap(frame, faces)
+
+        # ── Cappello ─────────────────────────────────────────────────────────
+        if hat_active:
+            frame = effects.apply_hat_overlay(frame, faces)
+
+        # ── Occhiali ─────────────────────────────────────────────────────────
+        if glasses_active:
+            frame = effects.apply_glasses_overlay(frame, faces)
+
+        # ── Rilevamento movimento ─────────────────────────────────────────────
+        if motion_active:
+            frame = effects.apply_motion_detection(frame)
+
+        # ── Ghost effect (scia) ───────────────────────────────────────────────
+        if ghost_active:
+            frame = effects.apply_ghost_effect(frame)
 
         # ── Rettangoli verdi sui visi (sopra tutto, ben visibile) ─────────────
         if face_rect_active:
@@ -119,15 +147,23 @@ def main():
             "blur_bg":   blur_bg_active,
             "face_rect": face_rect_active,
             "face_swap": face_swap_active,
+            "hat":       hat_active,
+            "glasses":   glasses_active,
+            "motion":    motion_active,
+            "ghost":     ghost_active,
         }
         frame = ui.draw_hud(frame, hud_info)
-        #frame = ui.draw_filter_bar(frame, list(FILTER_MAP.values()), current_filter_name)
+        frame = ui.draw_filter_bar(frame, list(FILTER_MAP.values()), current_filter_name)
 
         # ── Pannello comandi laterale sinistro ────────────────────────────────
         active_effects = {
             "face_rect": face_rect_active,
             "blur_bg":   blur_bg_active,
             "face_swap": face_swap_active,
+            "hat":       hat_active,
+            "glasses":   glasses_active,
+            "motion":    motion_active,
+            "ghost":     ghost_active,
             "mirror":    mirror_active,
             "recording": recording,
         }
@@ -158,7 +194,28 @@ def main():
 
         elif key == ord('n') or key == ord('N'):
             face_swap_active = not face_swap_active
-            print(f"Face swap: {'ON' if face_swap_active else 'OFF'}")
+            if face_swap_active:
+                effects.start_face_swap_sound()
+                print("Face swap ON  →  suono avviato")
+            else:
+                effects.stop_face_swap_sound()
+                print("Face swap OFF →  suono fermato")
+
+        elif key == ord('h') or key == ord('H'):
+            hat_active = not hat_active
+            print(f"Cappello: {'ON' if hat_active else 'OFF'}")
+
+        elif key == ord('g') or key == ord('G'):
+            glasses_active = not glasses_active
+            print(f"Occhiali: {'ON' if glasses_active else 'OFF'}")
+
+        elif key == ord('o') or key == ord('O'):
+            motion_active = not motion_active
+            print(f"Rilevamento movimento: {'ON' if motion_active else 'OFF'}")
+
+        elif key == ord('t') or key == ord('T'):
+            ghost_active = not ghost_active
+            print(f"Ghost effect: {'ON' if ghost_active else 'OFF'}")
 
         elif key == ord('m') or key == ord('M'):
             mirror_active = not mirror_active
@@ -182,6 +239,7 @@ def main():
     # ── Cleanup ───────────────────────────────────────────────────────────────
     if recording and video_writer:
         video_writer.release()
+    effects.stop_face_swap_sound()   # sicurezza: ferma audio se ancora attivo
     cap.release()
     cv2.destroyAllWindows()
     print("Applicazione chiusa correttamente.")
