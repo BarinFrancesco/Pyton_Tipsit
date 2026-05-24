@@ -1,15 +1,10 @@
-"""
-ui.py - Interfaccia utente sovraimpressa sul frame webcam.
 
-Gestisce HUD (informazioni in tempo reale) e barra filtri navigabile.
-Ogni funzione riceve e restituisce il frame modificato.
-"""
 
 import cv2
 import numpy as np
 
 
-# ─── Costanti di stile ────────────────────────────────────────────────────────
+# costanti di stile
 FONT        = cv2.FONT_HERSHEY_SIMPLEX
 COLOR_WHITE = (255, 255, 255)
 COLOR_BLACK = (0,   0,   0)
@@ -18,12 +13,10 @@ COLOR_RED   = (0,   0,   220)
 COLOR_BLUE  = (220, 160, 0)
 COLOR_YELLOW= (0,   220, 220)
 
-
+#disegna testo
 def _draw_text_with_shadow(frame, text, pos, font_scale=0.55, color=COLOR_WHITE,
                            thickness=1, shadow_offset=1):
-    """
-    Disegna testo con ombra nera per garantire leggibilità su qualsiasi sfondo.
-    """
+
     x, y = pos
     # Ombra
     cv2.putText(frame, text, (x + shadow_offset, y + shadow_offset),
@@ -32,21 +25,9 @@ def _draw_text_with_shadow(frame, text, pos, font_scale=0.55, color=COLOR_WHITE,
     cv2.putText(frame, text, (x, y),
                 FONT, font_scale, color, thickness, cv2.LINE_AA)
 
-
+# pannello di stato
 def draw_hud(frame, info: dict):
-    """
-    Sovraimpressa nell'angolo in alto a sinistra del frame.
-    Mostra: filtro attivo, numero facce, FPS, stato registrazione, mirror, blur.
 
-    info = {
-        'filter':    str   - nome filtro attivo
-        'faces':     int   - numero di facce rilevate
-        'fps':       float - FPS correnti
-        'recording': bool  - True se si sta registrando
-        'mirror':    bool  - True se flip specchio attivo
-        'blur_bg':   bool  - True se blur sfondo attivo
-    }
-    """
     result = frame.copy()
     h, w   = result.shape[:2]
 
@@ -81,8 +62,6 @@ def draw_hud(frame, info: dict):
     if info.get('face_rect'): stati.append("FACE-BOX")
     if info.get('face_swap'): stati.append("FACE-SWAP")
     if info.get('hat'):       stati.append("HAT")
-    if info.get('glasses'):   stati.append("GLASSES")
-    if info.get('motion'):    stati.append("MOTION")
     if info.get('ghost'):     stati.append("GHOST")
     if stati:
         # Se troppi stati, li spezza su due righe
@@ -104,58 +83,11 @@ def draw_hud(frame, info: dict):
     return result
 
 
-def draw_filter_bar(frame, filter_list, active_name):
-    """
-    Barra filtri in basso al frame: mostra tutti i filtri disponibili,
-    evidenziando quello attivo con sfondo colorato.
-
-    filter_list: lista di tuple (nome, funzione) - come FILTER_MAP.values()
-    active_name: nome del filtro correntemente attivo
-    """
-    result  = frame.copy()
-    h, w    = result.shape[:2]
-
-    bar_h   = 32
-    bar_y   = h - bar_h
-
-    # Sfondo barra semitrasparente
-    overlay = result.copy()
-    cv2.rectangle(overlay, (0, bar_y), (w, h), (20, 20, 20), -1)
-    result = cv2.addWeighted(result, 0.45, overlay, 0.55, 0)
-
-    # Calcola larghezza di ogni slot
-    n       = len(filter_list)
-    slot_w  = w // n if n > 0 else w
-
-    for i, (name, _) in enumerate(filter_list):
-        x1 = i * slot_w
-        x2 = x1 + slot_w - 2
-        is_active = (name == active_name)
-
-        # Sfondo slot attivo
-        if is_active:
-            cv2.rectangle(result, (x1, bar_y + 1), (x2, h - 1), (50, 180, 80), -1)
-
-        # Numero tasto (1-indexed)
-        label = f"{i+1}:{name}"
-        # Tronca se troppo lungo
-        if len(label) > 10:
-            label = label[:9] + "."
-
-        text_color = COLOR_BLACK if is_active else COLOR_WHITE
-        scale = 0.38
-        tx = x1 + 4
-        ty = bar_y + 21
-        cv2.putText(result, label, (tx, ty), FONT, scale, text_color, 1, cv2.LINE_AA)
-
-    return result
 
 
+#mostra scritta sopra alla faccia
 def draw_label_above_face(frame, faces, label="Utente"):
-    """
-    Scrive un'etichetta sopra ogni viso rilevato.
-    Utile come effetto aggiuntivo o per debug.
-    """
+
     result = frame.copy()
     for (x, y, w, h) in faces:
         _draw_text_with_shadow(result, label,
@@ -163,25 +95,14 @@ def draw_label_above_face(frame, faces, label="Utente"):
                                font_scale=0.6, color=COLOR_YELLOW, thickness=1)
     return result
 
-
+# lista filtri e effetti
 def draw_command_panel(frame, active_effects: dict):
-    """
-    Pannello comandi fisso a sinistra, appena sotto la barra di stato (HUD).
-    Elenca tutti i comandi disponibili divisi in sezioni:
-      - Filtri colore (tasti 1-8)
-      - Effetti faccia (tasti F, B, N)
-      - Controlli generali (M, S, R, Q)
-    Gli effetti attivi vengono evidenziati in verde.
 
-    active_effects: dict con chiavi 'face_rect', 'blur_bg', 'face_swap', 'mirror', 'recording'
-    """
     result = frame.copy()
+    fh, fw = result.shape[:2]
 
-    # ── Struttura del pannello ────────────────────────────────────────────────
-    # Ogni voce è (tasto, descrizione, chiave_stato_o_None)
-    # Se chiave_stato è None → non ha uno stato on/off (es. screenshot)
     sections = [
-        ("── FILTRI COLORE ──", None, [
+        ("FILTRI COLORE", [
             ("[1]", "Originale",      None),
             ("[2]", "Scala di grigi", None),
             ("[3]", "Negativo",       None),
@@ -191,93 +112,97 @@ def draw_command_panel(frame, active_effects: dict):
             ("[7]", "Pixelate",       None),
             ("[8]", "Vignettatura",   None),
         ]),
-        ("── EFFETTI FACCIA ──", None, [
-            ("[F]", "Box viso",       "face_rect"),
-            ("[B]", "Blur sfondo",    "blur_bg"),
-            ("[N]", "Face swap",      "face_swap"),
-            ("[H]", "Cappello",       "hat"),
-            ("[G]", "Occhiali",       "glasses"),
+        ("EFFETTI FACCIA", [
+            ("[F]", "Box viso",    "face_rect"),
+            ("[B]", "Blur sfondo", "blur_bg"),
+            ("[N]", "Face swap",   "face_swap"),
+            ("[H]", "Cappello",    "hat"),
         ]),
-        ("── EFFETTI SPECIALI ──", None, [
-            ("[O]", "Movimento",      "motion"),
-            ("[T]", "Ghost/scia",     "ghost"),
+        ("EFFETTI SPECIALI", [
+            ("[T]", "Ghost/scia", "ghost"),
         ]),
-        ("── CONTROLLI ──", None, [
-            ("[M]", "Mirror",         "mirror"),
-            ("[S]", "Screenshot",     None),
-            ("[R]", "Registra",       "recording"),
-            ("[Q]", "Esci",           None),
+        ("CONTROLLI", [
+            ("[M]", "Mirror",    "mirror"),
+            ("[S]", "Screenshot", None),
+            ("[R]", "Registra",  "recording"),
+            ("[Q]", "Esci",      None),
         ]),
     ]
 
-    # ── Dimensioni e posizione ────────────────────────────────────────────────
-    LINE_H   = 19          # altezza di ogni riga in pixel
-    PAD_X    = 10          # padding interno orizzontale
-    PAD_Y    = 8           # padding interno verticale
-    BOX_W    = 190         # larghezza del pannello
-    START_X  = 8           # distanza dal bordo sinistro
-    START_Y  = 138         # sotto l'HUD (che finisce ~130px)
+    # Totale righe da disegnare: 1 titolo + voci per sezione + gap tra sezioni
+    total_rows = sum(1 + len(voci) for _, voci in sections) + len(sections) - 1
 
-    # Conta le righe totali: titolo sezione + voci
-    total_rows = sum(1 + len(voci) for _, _, voci in sections) + len(sections) - 1
-    BOX_H = total_rows * LINE_H + PAD_Y * 2 + 4
+    START_X = 8
+    START_Y = 138          # sotto HUD
+    BOX_W   = 192
+    PAD_X   = 8
+    FILTER_BAR_H = 34      # spazio riservato alla barra filtri in basso
 
-    # ── Sfondo semitrasparente ────────────────────────────────────────────────
+    # Spazio verticale disponibile
+    available_h = fh - START_Y - FILTER_BAR_H - 6
+
+    # Calcola LINE_H e font_scale in modo che tutto ci stia
+    # Partiamo dal valore ideale e scaliamo verso il basso se necessario
+    LINE_H     = max(14, min(19, available_h // (total_rows + 2)))
+    font_scale = max(0.28, min(0.40, LINE_H / 48.0))
+    title_scale = max(0.26, font_scale - 0.04)
+
+    BOX_H = total_rows * LINE_H + LINE_H + 8   # +8 padding verticale
+
+    # Sfondo semitrasparente
     overlay = result.copy()
     cv2.rectangle(overlay,
                   (START_X, START_Y),
                   (START_X + BOX_W, START_Y + BOX_H),
                   (15, 15, 15), -1)
-    result = cv2.addWeighted(result, 0.4, overlay, 0.6, 0)
-
-    # Bordo sottile
+    result = cv2.addWeighted(result, 0.35, overlay, 0.65, 0)
     cv2.rectangle(result,
                   (START_X, START_Y),
                   (START_X + BOX_W, START_Y + BOX_H),
-                  (80, 80, 80), 1)
+                  (70, 70, 70), 1)
 
-    # ── Disegna le voci ───────────────────────────────────────────────────────
-    cursor_y = START_Y + PAD_Y + LINE_H
+    cursor_y = START_Y + LINE_H
 
-    for s_idx, (titolo, _, voci) in enumerate(sections):
-        # Separatore tra sezioni (non prima della prima)
+    for s_idx, (titolo, voci) in enumerate(sections):
         if s_idx > 0:
-            cursor_y += 6
+            cursor_y += max(4, LINE_H // 4)   # gap tra sezioni
 
-        # Titolo sezione
-        cv2.putText(result, titolo,
+        # ── Titolo sezione ────────────────────────────────────────────────────
+        cv2.putText(result, f"-- {titolo} --",
                     (START_X + PAD_X, cursor_y),
-                    FONT, 0.36, (160, 160, 160), 1, cv2.LINE_AA)
+                    FONT, title_scale, (150, 150, 150), 1, cv2.LINE_AA)
         cursor_y += LINE_H
 
         for (tasto, descrizione, stato_key) in voci:
+            # Interrompi se usciamo dal pannello (sicurezza)
+            if cursor_y > START_Y + BOX_H:
+                break
+
             is_active = stato_key is not None and active_effects.get(stato_key, False)
 
-            # Sfondo verde per le voci attive
+            # Sfondo verde per voce attiva
             if is_active:
                 cv2.rectangle(result,
-                              (START_X + 2, cursor_y - LINE_H + 4),
-                              (START_X + BOX_W - 2, cursor_y + 3),
-                              (30, 100, 40), -1)
+                              (START_X + 2, cursor_y - LINE_H + 3),
+                              (START_X + BOX_W - 2, cursor_y + 2),
+                              (25, 95, 40), -1)
 
-            # Tasto (es. "[F]") in giallo/verde
-            key_color  = COLOR_GREEN if is_active else COLOR_YELLOW
-            text_color = COLOR_BLACK if is_active else COLOR_WHITE
+            key_col  = COLOR_GREEN  if is_active else COLOR_YELLOW
+            text_col = COLOR_BLACK  if is_active else COLOR_WHITE
 
+            # Tasto
             cv2.putText(result, tasto,
                         (START_X + PAD_X, cursor_y),
-                        FONT, 0.40, key_color, 1, cv2.LINE_AA)
-
+                        FONT, font_scale, key_col, 1, cv2.LINE_AA)
             # Descrizione
             cv2.putText(result, descrizione,
-                        (START_X + PAD_X + 34, cursor_y),
-                        FONT, 0.40, text_color, 1, cv2.LINE_AA)
-
-            # Indicatore ON a destra per effetti attivi
+                        (START_X + PAD_X + 32, cursor_y),
+                        FONT, font_scale, text_col, 1, cv2.LINE_AA)
+            # ON badge
             if is_active:
                 cv2.putText(result, "ON",
-                            (START_X + BOX_W - 30, cursor_y),
-                            FONT, 0.36, COLOR_GREEN, 1, cv2.LINE_AA)
+                            (START_X + BOX_W - 28, cursor_y),
+                            FONT, font_scale - 0.04, (80, 255, 120), 1, cv2.LINE_AA)
 
             cursor_y += LINE_H
 
@@ -285,7 +210,5 @@ def draw_command_panel(frame, active_effects: dict):
 
 
 def draw_controls_overlay(frame):
-    """
-    Mantenuta per compatibilità. Usa draw_command_panel per il pannello completo.
-    """
+
     return frame

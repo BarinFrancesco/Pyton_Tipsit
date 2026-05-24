@@ -1,8 +1,3 @@
-"""
-main.py - Loop principale dell'applicazione webcam.
-Gestisce l'acquisizione video, i tasti della tastiera e l'orchestrazione
-di filtri, effetti e HUD.
-"""
 
 import cv2
 import time
@@ -10,8 +5,8 @@ import filters
 import effects
 import ui
 
-# ─── Configurazione ────────────────────────────────────────────────────────────
-CAMERA_INDEX = 0          # Indice della webcam (0 = webcam di default)
+# Configurazione
+CAMERA_INDEX = 0          # Indice della di default
 WINDOW_NAME  = "Webcam Filtri"
 
 # Mappa tasto → (nome filtro, funzione)
@@ -26,15 +21,13 @@ FILTER_MAP = {
     ord('8'): ("Vignetta",     filters.apply_vignette),
 }
 
-# ─── Stato applicazione ────────────────────────────────────────────────────────
+# Stato applicazione
 current_filter_name  = "Originale"
 current_filter_fn    = filters.apply_original
 face_rect_active     = False   # Tasto F: rettangoli verdi sui visi
 blur_bg_active       = False   # Tasto B: blur sfondo
 face_swap_active     = False   # Tasto N: sostituisce il viso con New_Face.jpg
 hat_active           = False   # Tasto H: cappello sopra la testa
-glasses_active       = False   # Tasto G: occhiali sul viso
-motion_active        = False   # Tasto O: rilevamento movimento
 ghost_active         = False   # Tasto T: effetto scia/fantasma
 mirror_active        = False   # Tasto M: flip specchio
 recording            = False   # Tasto R: registrazione video
@@ -51,9 +44,9 @@ face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
-
+#funziona videocamera
 def init_video_writer(frame):
-    """Crea un VideoWriter per registrare il feed con filtri applicati."""
+
     h, w = frame.shape[:2]
     filename = time.strftime("rec_%Y%m%d_%H%M%S.mp4")
     fourcc   = cv2.VideoWriter_fourcc(*"mp4v")
@@ -63,7 +56,7 @@ def init_video_writer(frame):
 def main():
     global current_filter_name, current_filter_fn
     global face_rect_active, blur_bg_active, face_swap_active
-    global hat_active, glasses_active, motion_active, ghost_active
+    global hat_active, ghost_active
     global mirror_active
     global recording, video_writer
     global fps, frame_count, fps_timer
@@ -82,7 +75,7 @@ def main():
             print("Errore: frame non ricevuto.")
             break
 
-        # ── Calcolo FPS ──────────────────────────────────────────────────────
+        #  Calcolo FPS
         frame_count += 1
         elapsed = time.time() - fps_timer
         if elapsed >= 1.0:
@@ -90,11 +83,11 @@ def main():
             frame_count = 0
             fps_timer  = time.time()
 
-        # ── Flip specchio ────────────────────────────────────────────────────
+        # Flip specchio
         if mirror_active:
             frame = cv2.flip(frame, 1)
 
-        # ── Face detection (usata da più effetti) ────────────────────────────
+        #  Face detection (usata da più effetti)
         gray_for_det = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # equalizeHist migliora la detection in condizioni di luce non ideale
         gray_for_det = cv2.equalizeHist(gray_for_det)
@@ -106,38 +99,30 @@ def main():
             flags=cv2.CASCADE_SCALE_IMAGE
         )
 
-        # ── Blur sfondo ──────────────────────────────────────────────────────
+        # Blur sfondo
         if blur_bg_active:
             frame = effects.apply_background_blur(frame, faces)
 
-        # ── Face swap (New_Face.jpg) ──────────────────────────────────────────
+        #  Face swap (New_Face.jpg)
         if face_swap_active:
             frame = effects.apply_face_swap(frame, faces)
 
-        # ── Cappello ─────────────────────────────────────────────────────────
+        #  Cappello
         if hat_active:
             frame = effects.apply_hat_overlay(frame, faces)
 
-        # ── Occhiali ─────────────────────────────────────────────────────────
-        if glasses_active:
-            frame = effects.apply_glasses_overlay(frame, faces)
-
-        # ── Rilevamento movimento ─────────────────────────────────────────────
-        if motion_active:
-            frame = effects.apply_motion_detection(frame)
-
-        # ── Ghost effect (scia) ───────────────────────────────────────────────
+        #  Ghost effect (scia)
         if ghost_active:
             frame = effects.apply_ghost_effect(frame)
 
-        # ── Rettangoli verdi sui visi (sopra tutto, ben visibile) ─────────────
+        #  Rettangoli verdi sui visi (sopra tutto, ben visibile)
         if face_rect_active:
             frame = effects.draw_face_rectangles(frame, faces)
 
-        # ── Filtro colore attivo ──────────────────────────────────────────────
+        # Filtro colore attivo
         frame = current_filter_fn(frame)
 
-        # ── HUD sovrimpresso ─────────────────────────────────────────────────
+        #  HUD sovrimpresso
         hud_info = {
             "filter":    current_filter_name,
             "faces":     len(faces),
@@ -148,34 +133,29 @@ def main():
             "face_rect": face_rect_active,
             "face_swap": face_swap_active,
             "hat":       hat_active,
-            "glasses":   glasses_active,
-            "motion":    motion_active,
             "ghost":     ghost_active,
         }
         frame = ui.draw_hud(frame, hud_info)
-        frame = ui.draw_filter_bar(frame, list(FILTER_MAP.values()), current_filter_name)
 
-        # ── Pannello comandi laterale sinistro ────────────────────────────────
+        #  Pannello comandi laterale sinistro
         active_effects = {
             "face_rect": face_rect_active,
             "blur_bg":   blur_bg_active,
             "face_swap": face_swap_active,
             "hat":       hat_active,
-            "glasses":   glasses_active,
-            "motion":    motion_active,
             "ghost":     ghost_active,
             "mirror":    mirror_active,
             "recording": recording,
         }
         frame = ui.draw_command_panel(frame, active_effects)
 
-        # ── Registrazione ─────────────────────────────────────────────────────
+        #  Registrazione
         if recording and video_writer is not None:
             video_writer.write(frame)
 
         cv2.imshow(WINDOW_NAME, frame)
 
-        # ── Gestione tasti ────────────────────────────────────────────────────
+        #  Gestione tasti
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord('q') or key == ord('Q'):
@@ -205,14 +185,6 @@ def main():
             hat_active = not hat_active
             print(f"Cappello: {'ON' if hat_active else 'OFF'}")
 
-        elif key == ord('g') or key == ord('G'):
-            glasses_active = not glasses_active
-            print(f"Occhiali: {'ON' if glasses_active else 'OFF'}")
-
-        elif key == ord('o') or key == ord('O'):
-            motion_active = not motion_active
-            print(f"Rilevamento movimento: {'ON' if motion_active else 'OFF'}")
-
         elif key == ord('t') or key == ord('T'):
             ghost_active = not ghost_active
             print(f"Ghost effect: {'ON' if ghost_active else 'OFF'}")
@@ -236,7 +208,7 @@ def main():
                     video_writer = None
                 print("Registrazione fermata.")
 
-    # ── Cleanup ───────────────────────────────────────────────────────────────
+    # Cleanup
     if recording and video_writer:
         video_writer.release()
     effects.stop_face_swap_sound()   # sicurezza: ferma audio se ancora attivo
@@ -246,4 +218,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrotto dall'utente (Ctrl+C).")
+    finally:
+        # Garantisce lo stop audio in QUALSIASI caso di uscita
+        effects.stop_face_swap_sound()
+        cv2.destroyAllWindows()

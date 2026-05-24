@@ -1,39 +1,28 @@
-"""
-effects.py - Effetti che utilizzano la face detection e operazioni di sistema.
 
-Ogni funzione che trasforma il frame:
-  - Riceve il frame come primo parametro
-  - Restituisce il frame modificato
-  - Non modifica l'originale
-  - Ha un commento che spiega brevemente cosa fa
-"""
 
 import cv2
 import numpy as np
 import os
 import time
 
-# ─── Asset overlay (PNG con canale alpha) ─────────────────────────────────────
+# trova òa cartella degli asset
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
+#funzione che carica l'immagine
 def _load_asset(filename):
-    """Carica un PNG con canale alpha dalla cartella assets. Ritorna None se non trovato."""
+
     path = os.path.join(ASSETS_DIR, filename)
     if os.path.exists(path):
         return cv2.imread(path, cv2.IMREAD_UNCHANGED)  # mantiene canale alpha
     return None
 
 _hat_img     = _load_asset("cappello.png")
-_glasses_img = _load_asset("occhiali.png")
 
 
-# ─── Rettangolo verde sui visi ────────────────────────────────────────────────
+# Rettangolo verde sui visi
 
 def draw_face_rectangles(frame, faces):
-    """
-    Disegna un rettangolo verde attorno a ogni viso rilevato.
-    Aggiunge anche un piccolo punto centrale e la numerazione del viso.
-    """
+
     result = frame.copy()
     for i, (x, y, w, h) in enumerate(faces):
         # Rettangolo verde principale
@@ -108,13 +97,10 @@ def apply_background_blur(frame, faces, blur_strength=51):
     return result
 
 
-# ─── Overlay PNG con alpha ─────────────────────────────────────────────────────
+#Funzione che mette limagine sopra al frame
 
 def _overlay_png(frame, png, x, y, target_w, target_h):
-    """
-    Sovrappone un PNG con canale alpha (BGRA) sul frame BGR.
-    L'immagine viene scalata a (target_w, target_h) e posizionata in (x, y).
-    """
+
     if png is None:
         return frame
 
@@ -142,75 +128,54 @@ def _overlay_png(frame, png, x, y, target_w, target_h):
     result[y1:y2, x1:x2] = blended.astype(np.uint8)
     return result
 
-
+#funzione che mette il cappello sopra il viso
 def apply_hat_overlay(frame, faces):
-    """Sovrappone il cappello PNG sopra ogni viso rilevato."""
+
     result = frame.copy()
     for (x, y, w, h) in faces:
         hat_w = int(w * 1.4)
         hat_h = int(h * 0.7)
         hat_x = x - (hat_w - w) // 2
         hat_y = y - hat_h + 10
-        result = _overlay_png(result, _hat_img, hat_x, hat_y, hat_w, hat_h)
+
+        if _hat_img is not None:
+            result = _overlay_png(result, _hat_img, hat_x, hat_y, hat_w, hat_h)
+        else:
+            # Placeholder: cappello a cilindro stilizzato
+            cx     = x + w // 2
+            top_y  = y - int(h * 0.55)
+            # Tesa del cappello
+            cv2.rectangle(result,
+                          (cx - int(w * 0.65), y - int(h * 0.08)),
+                          (cx + int(w * 0.65), y + int(h * 0.04)),
+                          (40, 20, 10), -1)
+            cv2.rectangle(result,
+                          (cx - int(w * 0.65), y - int(h * 0.08)),
+                          (cx + int(w * 0.65), y + int(h * 0.04)),
+                          (80, 50, 20), 2)
+            # Calotta del cappello
+            cv2.rectangle(result,
+                          (cx - int(w * 0.38), top_y),
+                          (cx + int(w * 0.38), y - int(h * 0.06)),
+                          (40, 20, 10), -1)
+            cv2.rectangle(result,
+                          (cx - int(w * 0.38), top_y),
+                          (cx + int(w * 0.38), y - int(h * 0.06)),
+                          (80, 50, 20), 2)
+            # Nastro
+            ribbon_y = y - int(h * 0.15)
+            cv2.rectangle(result,
+                          (cx - int(w * 0.38), ribbon_y),
+                          (cx + int(w * 0.38), ribbon_y + int(h * 0.07)),
+                          (0, 0, 160), -1)
     return result
 
 
-def apply_glasses_overlay(frame, faces):
-    """
-    Sovrappone gli occhiali PNG all'altezza degli occhi di ogni viso.
-    Approssima la posizione degli occhi come il terzo superiore del viso.
-    """
-    result = frame.copy()
-    for (x, y, w, h) in faces:
-        g_w  = int(w * 0.9)
-        g_h  = int(h * 0.25)
-        g_x  = x + (w - g_w) // 2
-        g_y  = y + int(h * 0.25)
-        result = _overlay_png(result, _glasses_img, g_x, g_y, g_w, g_h)
-    return result
-
-
-# ─── Rilevamento movimento ────────────────────────────────────────────────────
-
-_prev_frame_gray = None
-
-def apply_motion_detection(frame, threshold=30):
-    """
-    Confronta il frame corrente con il precedente usando cv2.absdiff.
-    Evidenzia in rosso le zone con cambiamenti superiori alla soglia.
-    """
-    global _prev_frame_gray
-    result = frame.copy()
-    gray   = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray   = cv2.GaussianBlur(gray, (11, 11), 0)
-
-    if _prev_frame_gray is None:
-        _prev_frame_gray = gray
-        return result
-
-    diff = cv2.absdiff(_prev_frame_gray, gray)
-    _, thresh = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
-    thresh = cv2.dilate(thresh, None, iterations=2)
-
-    # Colora le zone in movimento in rosso semitrasparente
-    motion_mask = thresh > 0
-    overlay = result.copy()
-    overlay[motion_mask] = [0, 0, 200]
-    result = cv2.addWeighted(result, 0.7, overlay, 0.3, 0)
-
-    _prev_frame_gray = gray
-    return result
-
-
-# ─── Ghost effect ─────────────────────────────────────────────────────────────
-
+#effetto ghost
 _ghost_prev = None
 
 def apply_ghost_effect(frame, alpha=0.5):
-    """
-    Sovrappone il frame corrente con una versione pesata del frame precedente
-    per creare un effetto scia/fantasma.
-    """
+
     global _ghost_prev
     result = frame.copy()
     if _ghost_prev is None:
@@ -224,61 +189,61 @@ def apply_ghost_effect(frame, alpha=0.5):
 
 
 
-# ─── Audio (pygame per mp3 in loop) ──────────────────────────────────────────
 
-_audio_initialized = False
-_SOUND_PATH = os.path.join(ASSETS_DIR, "sound.mp3")
+# funzione per mettere un audio in sottofondo
 
-def _init_audio():
-    """Inizializza pygame mixer per la riproduzione audio. Chiamata lazy al primo uso."""
-    global _audio_initialized
-    if _audio_initialized:
-        return True
+_SOUND_PATH   = os.path.join(ASSETS_DIR, "sound.mp3")
+_audio_thread = None    # thread che riproduce il suono in loop
+_audio_stop   = False   # flag per fermare il loop
+
+def _audio_loop():
+
+    global _audio_stop
     try:
-        import pygame
-        pygame.mixer.init()
-        _audio_initialized = True
-        return True
+        from playsound import playsound
+        while not _audio_stop:
+            playsound(_SOUND_PATH, block=True)
     except Exception as e:
-        print(f"[AUDIO] pygame non disponibile: {e}  →  installa con: pip install pygame")
-        return False
+        print(f"[AUDIO] Errore riproduzione: {e}")
+        print("[AUDIO] Installa con:  pip install playsound==1.2.2")
 
+#crea un altro thread che fa il suono per non bloccareil programma
 def start_face_swap_sound():
-    """Avvia sound.mp3 in loop continuo. Non fa nulla se il file non esiste."""
-    if not _init_audio():
-        return
+
+    global _audio_thread, _audio_stop
+
     if not os.path.exists(_SOUND_PATH):
         print(f"[AUDIO] File non trovato: {_SOUND_PATH}")
         return
-    try:
-        import pygame
-        pygame.mixer.music.load(_SOUND_PATH)
-        pygame.mixer.music.play(loops=-1)   # -1 = loop infinito
-    except Exception as e:
-        print(f"[AUDIO] Errore avvio: {e}")
 
-def stop_face_swap_sound():
-    """Ferma la riproduzione audio."""
-    if not _audio_initialized:
+    # Se già in esecuzione non fare nulla
+    if _audio_thread is not None and _audio_thread.is_alive():
         return
-    try:
-        import pygame
-        pygame.mixer.music.stop()
-    except Exception:
-        pass
+
+    import threading
+    _audio_stop   = False
+    _audio_thread = threading.Thread(target=_audio_loop, daemon=True)
+    _audio_thread.start()
+    print("[AUDIO] Riproduzione avviata.")
+
+#ferma il suono quando chiudo
+def stop_face_swap_sound():
+
+    global _audio_stop, _audio_thread
+    _audio_stop   = True
+    _audio_thread = None
+    print("[AUDIO] Riproduzione fermata.")
 
 
-# ─── Face Swap "ADESSO PARLO IO" ─────────────────────────────────────────────
 
-# Cache dell'immagine: caricata una volta sola
+# filtro joker
+
+
 _new_face_cache = None
 _new_face_loaded = False
 
+# va a prendere l'immagine
 def _get_new_face():
-    """
-    Carica New_Face.jpg da assets/ con cache.
-    Ritorna l'immagine BGR oppure None se non trovata.
-    """
     global _new_face_cache, _new_face_loaded
     if _new_face_loaded:
         return _new_face_cache
@@ -294,25 +259,18 @@ _last_faces = []
 _face_miss_counter = 0
 _FACE_MISS_TOLERANCE = 8   # frame consecutivi senza viso prima di resettare
 
-
+#uniamo scala di grigi, filtro ed scritta
 def apply_face_swap(frame, faces):
-    """
-    Effetto "ADESSO PARLO IO":
-      1. Converte l'intero frame in bianco e nero
-      2. Sovrappone New_Face.jpg sul viso rilevato con maschera ellittica morbida
-      3. Scrive "ADESSO PARLO IO" in grande in basso al centro
-    Usa l'ultima posizione nota del viso per stabilizzare la detection
-    nei frame in cui la Haar cascade fallisce temporaneamente.
-    """
+
     global _last_faces, _face_miss_counter
 
     new_face_img = _get_new_face()
 
-    # ── 1. Tutto in bianco e nero ─────────────────────────────────────────────
+    # Tutto in bianco e nero
     gray   = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     result = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-    # ── Stabilizzazione face detection ───────────────────────────────────────
+    #  Stabilizzazione face detection
     if len(faces) > 0:
         _last_faces       = list(faces)
         _face_miss_counter = 0
@@ -323,7 +281,7 @@ def apply_face_swap(frame, faces):
 
     faces_to_use = _last_faces
 
-    # ── 2. Overlay New_Face ───────────────────────────────────────────────────
+    # Overlay New_Face
     if new_face_img is None:
         # Avviso direttamente sul frame se manca il file
         cv2.putText(result, "New_Face.jpg non trovata in assets/",
@@ -360,7 +318,7 @@ def apply_face_swap(frame, faces):
             blended = nf.astype(np.float32) * m + roi * (1.0 - m)
             result[y1:y2, x1:x2] = np.clip(blended, 0, 255).astype(np.uint8)
 
-    # ── 3. Scritta "ADESSO PARLO IO" ─────────────────────────────────────────
+    #  Scritta
     h, w = result.shape[:2]
     testo     = "ADESSO PARLO IO"
     font      = cv2.FONT_HERSHEY_DUPLEX
@@ -374,17 +332,14 @@ def apply_face_swap(frame, faces):
     # Ombra nera spessa per leggibilità totale
     cv2.putText(result, testo, (tx + 3, ty + 3), font, scale,
                 (0, 0, 0), thickness + 4, cv2.LINE_AA)
-    # Testo bianco brillante
+    #testo
     cv2.putText(result, testo, (tx, ty), font, scale,
                 (255, 255, 255), thickness, cv2.LINE_AA)
 
     return result
 
-
+#per far si che il testo non "sbordi"
 def _fit_text_scale(text, font, max_width, thickness):
-    """
-    Calcola il font_scale massimo affinché il testo entri in max_width pixel.
-    """
     scale = 0.5
     while scale < 6.0:
         (tw, _), _ = cv2.getTextSize(text, font, scale + 0.1, thickness)
@@ -394,13 +349,10 @@ def _fit_text_scale(text, font, max_width, thickness):
     return round(scale, 1)
 
 
-# ─── Screenshot ───────────────────────────────────────────────────────────────
+# Screenshot
 
 def save_screenshot(frame, directory="."):
-    """
-    Salva il frame corrente come JPEG con nome che include data e ora,
-    così i file non si sovrascrivono mai.
-    """
+
     filename = time.strftime("screenshot_%Y%m%d_%H%M%S.jpg")
     filepath = os.path.join(directory, filename)
     cv2.imwrite(filepath, frame)

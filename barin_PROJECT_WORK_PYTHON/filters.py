@@ -1,38 +1,26 @@
-"""
-filters.py - Filtri colore applicabili al frame webcam.
 
-Ogni funzione:
-  - Riceve il frame BGR come primo parametro
-  - Restituisce il frame modificato (BGR)
-  - Non modifica l'originale (lavora su copia)
-  - Ha un commento che spiega brevemente cosa fa
-"""
 
 import cv2
 import numpy as np
 
-
+#restituisce il frame senza niente
 def apply_original(frame):
-    """Restituisce il frame senza alcuna modifica."""
     return frame.copy()
 
-
+#applica scala di grigi
 def apply_grayscale(frame):
-    """Converte in scala di grigi e riconverte in BGR per uniformità."""
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-
+#applica negativo
 def apply_negative(frame):
-    """Inverte tutti i valori dei pixel (255 - valore originale)."""
+
     return cv2.bitwise_not(frame.copy())
 
-
+#applica effetto seppia
 def apply_sepia(frame):
-    """
-    Applica l'effetto seppia classico tramite una matrice di trasformazione
-    che sposta i canali BGR verso tonalità calde marroni/giallastre.
-    """
+
     img = frame.copy().astype(np.float64)
     # Matrice seppia (righe = BGR output, colonne = BGR input)
     kernel = np.array([
@@ -44,21 +32,14 @@ def apply_sepia(frame):
     sepia = np.clip(sepia, 0, 255).astype(np.uint8)
     return sepia
 
-
+#applica effetto temperatura, usa la scala di grici con un'altra colormap
 def apply_heatmap(frame):
-    """
-    Converte in scala di grigi e applica la colormap JET di OpenCV,
-    simulando un effetto termico con colori dal blu (freddo) al rosso (caldo).
-    """
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     return cv2.applyColorMap(gray, cv2.COLORMAP_JET)
 
-
+#effetto cartoon
 def apply_cartoon(frame):
-    """
-    Effetto fumetto: bilateral filter ripetuto per appiattire i colori,
-    poi bordi Canny sovrapposti in nero per simulare il tratto del disegno.
-    """
     img = frame.copy()
 
     # Appiattimento colori con bilateral filter (ripetuto per effetto più forte)
@@ -74,23 +55,17 @@ def apply_cartoon(frame):
     cartoon = cv2.bitwise_and(img, cv2.bitwise_not(edges))
     return cartoon
 
-
+#effetto pixelato
 def apply_pixelate(frame, pixel_size=16):
-    """
-    Effetto pixel art: rimpicciolisce il frame e lo riingrandisce con
-    interpolazione NEAREST per ottenere blocchi di pixel visibili.
-    """
+
     h, w = frame.shape[:2]
     small = cv2.resize(frame, (w // pixel_size, h // pixel_size),
                        interpolation=cv2.INTER_LINEAR)
     return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
 
-
+#applica vignetta
 def apply_vignette(frame):
-    """
-    Vignettatura: scurisce progressivamente i bordi del frame usando
-    una maschera gaussiana circolare costruita con NumPy.
-    """
+
     img = frame.copy()
     h, w = img.shape[:2]
 
@@ -107,15 +82,4 @@ def apply_vignette(frame):
     # Applica la maschera a ogni canale
     for c in range(3):
         img[:, :, c] = (img[:, :, c] * mask).astype(np.uint8)
-    return img
-
-
-def apply_solarize(frame, threshold=128):
-    """
-    Solarizzazione: inverte i pixel il cui valore supera la soglia,
-    creando un effetto surreale simile all'omonimo effetto fotografico.
-    """
-    img = frame.copy()
-    mask = img >= threshold
-    img[mask] = 255 - img[mask]
     return img
